@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Електронна перерустка Face ID — офлайн MVP</title>
+  <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+  <style>
+    :root {
+      --bg:#0f172a;
+      --card:#111827;
+      --muted:#94a3b8;
+      --text:#e5e7eb;
+      --accent:#22c55e;
+      --danger:#ef4444;
+      --warn:#f59e0b;
+      --line:#334155;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0;
+      font-family: Arial, sans-serif;
+      background:linear-gradient(135deg,#020617,#172554);
+      color:var(--text);
+    }
+    .wrap { max-width:1100px; margin:0 auto; padding:16px; }
+    h1 { margin:8px 0 4px; font-size:28px; }
+    .sub { color:var(--muted); margin-bottom:16px; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .card {
+      background:rgba(17,24,39,.92);
+      border:1px solid var(--line);
+      border-radius:18px;
+      padding:16px;
+      box-shadow:0 12px 28px rgba(0,0,0,.25);
+    }
+    label { display:block; margin:10px 0 6px; color:#cbd5e1; font-size:14px; }
+    input, select {
+      width:100%;
+      padding:12px;
+      border-radius:12px;
+      border:1px solid var(--line);
+      background:#020617;
+      color:var(--text);
+      font-size:16px;
+    }
+    button {
+      border:0;
+      padding:12px 14px;
+      border-radius:12px;
+      font-weight:700;
+      cursor:pointer;
+      background:#2563eb;
+      color:white;
+      margin:6px 6px 6px 0;
+      font-size:15px;
+    }
+    button.green { background:var(--accent); color:#052e16; }
+    button.red { background:var(--danger); }
+    button.warn { background:var(--warn); color:#111827; }
+    button.gray { background:#475569; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    .status {
+      padding:12px;
+      border-radius:12px;
+      background:#020617;
+      border:1px dashed var(--line);
+      margin-top:10px;
+      min-height:44px;
+      color:#cbd5e1;
+    }
+    .big-scan {
+      font-size:22px;
+      padding:18px;
+      width:100%;
+      border-radius:16px;
+      margin-top:10px;
+    }
+    table { width:100%; border-collapse:collapse; margin-top:10px; font-size:14px; }
+    th, td { border-bottom:1px solid var(--line); padding:9px; text-align:left; vertical-align:top; }
+    th { color:#cbd5e1; }
+    .pill {
+      display:inline-block;
+      padding:4px 8px;
+      border-radius:999px;
+      font-size:12px;
+      font-weight:700;
+    }
+    .out { background:#7f1d1d; color:#fecaca; }
+    .in { background:#14532d; color:#bbf7d0; }
+    .pendingBox {
+      margin-top:12px;
+      padding:14px;
+      border-radius:14px;
+      border:1px solid #64748b;
+      background:#020617;
+      display:none;
+    }
+    .nameBig { font-size:26px; font-weight:800; margin:8px 0; }
+    .small { color:var(--muted); font-size:13px; }
+    .photoPreview { max-width:140px; border-radius:12px; margin-top:8px; border:1px solid var(--line); }
+    .tabs { display:flex; gap:8px; flex-wrap:wrap; margin:16px 0; }
+    .tab { background:#1e293b; }
+    .tab.active { background:#38bdf8; color:#082f49; }
+    .hidden { display:none; }
+    @media(max-width:850px){ .grid { grid-template-columns:1fr; } h1{font-size:23px;} }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Електронна перерустка — Face ID MVP</h1>
+    <div class="sub">Офлайн-логіка: дані зберігаються в браузері планшета. Для тесту бібліотека та моделі завантажуються з інтернету.</div>
+
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('scan')">Сканування</button>
+      <button class="tab" onclick="showTab('employees')">Працівники</button>
+      <button class="tab" onclick="showTab('journal')">Журнал</button>
+      <button class="tab" onclick="showTab('settings')">Налаштування</button>
+    </div>
+
+    <section id="tab-scan" class="card">
+      <h2>Сканування обличчя</h2>
+      <p class="small">Працівник робить фото. Система знаходить найбільш схожого працівника і просить підтвердити.</p>
+
+      <input id="scanPhoto" type="file" accept="image/*" capture="user" class="hidden" />
+      <button id="btnScan" class="big-scan green" onclick="document.getElementById('scanPhoto').click()" disabled>📷 Сканувати обличчя</button>
+
+      <div id="scanStatus" class="status">Завантаження моделей...</div>
+
+      <div id="confirmBox" class="pendingBox">
+        <div class="small">Система думає, що це:</div>
+        <div id="candidateName" class="nameBig">—</div>
+        <div id="candidateInfo" class="small"></div>
+        <button class="green" onclick="confirmCandidate()">Так, це я</button>
+        <button class="red" onclick="rejectCandidate()">Ні, сканувати ще раз</button>
+      </div>
+    </section>
+
+    <section id="tab-employees" class="hidden">
+      <div class="grid">
+        <div class="card">
+          <h2>Додати працівника</h2>
+          <label>ПІБ</label>
+          <input id="empName" placeholder="Наприклад: Петренко Іван" />
+          <label>Табельний номер</label>
+          <input id="empNumber" placeholder="Наприклад: 12345" />
+          <label>Фото обличчя 1</label>
+          <input id="photo1" type="file" accept="image/*" capture="user" />
+          <label>Фото обличчя 2</label>
+          <input id="photo2" type="file" accept="image/*" capture="user" />
+          <label>Фото обличчя 3</label>
+          <input id="photo3" type="file" accept="image/*" capture="user" />
+          <button class="green" onclick="addEmployee()">Зберегти працівника</button>
+          <div id="empStatus" class="status"></div>
+        </div>
+
+        <div class="card">
+          <h2>База працівників</h2>
+          <div id="employeesList"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-journal" class="hidden card">
+      <h2>Журнал виходу / повернення</h2>
+      <button class="green" onclick="exportCSV()">Експорт CSV</button>
+      <button class="warn" onclick="clearJournal()">Очистити журнал</button>
+      <div id="journalTable"></div>
+    </section>
+
+    <section id="tab-settings" class="hidden card">
+      <h2>Налаштування</h2>
+      <label>Поріг схожості</label>
+      <select id="threshold" onchange="saveThreshold()">
+        <option value="0.45">Суворо — 0.45</option>
+        <option value="0.50">Нормально — 0.50</option>
+        <option value="0.55" selected>М'якше — 0.55</option>
+        <option value="0.60">Дуже м'яко — 0.60</option>
+      </select>
+      <p class="small">Чим менше число — тим суворіше розпізнавання. Якщо часто не впізнає — постав 0.60. Якщо плутає людей — постав 0.45 або 0.50.</p>
+
+      <button class="gray" onclick="exportBackup()">Експорт резервної копії JSON</button>
+      <label>Імпорт резервної копії JSON</label>
+      <input id="backupFile" type="file" accept="application/json" onchange="importBackup(event)" />
+      <button class="red" onclick="clearAll()">Очистити все</button>
+
+      <div class="status">
+        Важливо: якщо очистити кеш/дані браузера на планшеті — база працівників і журнал можуть зникнути. Регулярно роби експорт.
+      </div>
+    </section>
+  </div>
+
+<script>
+const MODEL_URL = 'https://raw.githubusercontent.com/justadudewhohacks/face-api.js/master/weights';
+
+let employees = [];
+let journal = [];
+let pendingEmployee = null;
+let currentThreshold = 0.55;
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
+function nowStr() {
+  const d = new Date();
+  return d.toLocaleString('uk-UA', { hour12:false });
+}
+
+function getISO() {
+  return new Date().toISOString();
+}
+
+function saveData() {
+  localStorage.setItem('face_employees_v1', JSON.stringify(employees));
+  localStorage.setItem('face_journal_v1', JSON.stringify(journal));
+  localStorage.setItem('face_threshold_v1', String(currentThreshold));
+}
+
+function loadData() {
+  employees = JSON.parse(localStorage.getItem('face_employees_v1') || '[]');
+  journal = JSON.parse(localStorage.getItem('face_journal_v1') || '[]');
+  currentThreshold = Number(localStorage.getItem('face_threshold_v1') || '0.55');
+  document.getElementById('threshold').value = String(currentThreshold);
+}
+
+function showTab(name) {
+  ['scan','employees','journal','settings'].forEach(t => {
+    document.getElementById('tab-' + t).classList.toggle('hidden', t !== name);
+  });
+  document.querySelectorAll('.tab').forEach(btn => btn.classList.remove('active'));
+  event.target.classList.add('active');
+  renderEmployees();
+  renderJournal();
+}
+
+async function loadModels() {
+  const status = document.getElementById('scanStatus');
+  try {
+    status.textContent = 'Завантажую моделі розпізнавання...';
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+    await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+    await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+    status.textContent = 'Готово. Можна сканувати обличчя.';
+    document.getElementById('btnScan').disabled = false;
+  } catch (e) {
+    status.textContent = 'Помилка завантаження моделей. Перевір інтернет. Деталі: ' + e.message;
+  }
+}
+
+function fileToImage(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) return reject(new Error('Фото не вибрано'));
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function getDescriptorFromFile(file) {
+  const img = await fileToImage(file);
+  const detection = await faceapi
+    .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.45 }))
+    .withFaceLandmarks()
+    .withFaceDescriptor();
+
+  if (!detection) throw new Error('Обличчя не знайдено на фото');
+  return Array.from(detection.descriptor);
+}
+
+async function addEmployee() {
+  const name = document.getElementById('empName').value.trim();
+  const number = document.getElementById('empNumber').value.trim();
+  const files = [
+    document.getElementById('photo1').files[0],
+    document.getElementById('photo2').files[0],
+    document.getElementById('photo3').files[0]
+  ].filter(Boolean);
+
+  const status = document.getElementById('empStatus');
+  if (!name) return status.textContent = 'Вкажи ПІБ.';
+  if (files.length < 2) return status.textContent = 'Для нормального тесту додай мінімум 2 фото обличчя.';
+
+  try {
+    status.textContent = 'Обробляю фото...';
+    const descriptors = [];
+    for (const file of files) {
+      descriptors.push(await getDescriptorFromFile(file));
+    }
+
+    employees.push({ id: uid(), name, number, descriptors, createdAt: getISO() });
+    saveData();
+    document.getElementById('empName').value = '';
+    document.getElementById('empNumber').value = '';
+    ['photo1','photo2','photo3'].forEach(id => document.getElementById(id).value = '');
+    status.textContent = 'Працівника збережено.';
+    renderEmployees();
+  } catch (e) {
+    status.textContent = 'Помилка: ' + e.message;
+  }
+}
+
+function avgDistance(scanDesc, emp) {
+  const distances = emp.descriptors.map(d => faceapi.euclideanDistance(scanDesc, new Float32Array(d)));
+  return Math.min(...distances);
+}
+
+document.getElementById('scanPhoto').addEventListener('change', async (event) => {
+  const file = event.target.files[0];
+  const status = document.getElementById('scanStatus');
+  document.getElementById('confirmBox').style.display = 'none';
+  pendingEmployee = null;
+
+  if (!file) return;
+  if (employees.length === 0) {
+    status.textContent = 'Спочатку додай працівників у вкладці “Працівники”.';
+    return;
+  }
+
+  try {
+    status.textContent = 'Розпізнаю обличчя...';
+    const scanDesc = await getDescriptorFromFile(file);
+
+    const results = employees
+      .map(emp => ({ emp, distance: avgDistance(scanDesc, emp) }))
+      .sort((a,b) => a.distance - b.distance);
+
+    const best = results[0];
+
+    if (!best || best.distance > currentThreshold) {
+      status.textContent = 'Працівника не знайдено. Спробуй ще раз при кращому освітленні. Найкраща схожість: ' + (best ? best.distance.toFixed(3) : '—');
+      return;
+    }
+
+    pendingEmployee = best.emp;
+    document.getElementById('candidateName').textContent = best.emp.name;
+    document.getElementById('candidateInfo').textContent =
+      'Табельний: ' + (best.emp.number || '—') + ' | Дистанція: ' + best.distance.toFixed(3);
+    document.getElementById('confirmBox').style.display = 'block';
+    status.textContent = 'Підтверди працівника.';
+  } catch (e) {
+    status.textContent = 'Помилка сканування: ' + e.message;
+  } finally {
+    event.target.value = '';
+  }
+});
+
+function isCurrentlyOut(employeeId) {
+  const last = [...journal].reverse().find(x => x.employeeId === employeeId);
+  return last && last.action === 'Вийшов';
+}
+
+function confirmCandidate() {
+  if (!pendingEmployee) return;
+
+  const action = isCurrentlyOut(pendingEmployee.id) ? 'Повернувся' : 'Вийшов';
+
+  journal.push({
+    id: uid(),
+    employeeId: pendingEmployee.id,
+    name: pendingEmployee.name,
+    number: pendingEmployee.number || '',
+    action,
+    time: nowStr(),
+    iso: getISO()
+  });
+
+  saveData();
+  document.getElementById('confirmBox').style.display = 'none';
+  document.getElementById('scanStatus').textContent =
+    pendingEmployee.name + ': записано "' + action + '" о ' + nowStr();
+
+  pendingEmployee = null;
+  renderJournal();
+}
+
+function rejectCandidate() {
+  pendingEmployee = null;
+  document.getElementById('confirmBox').style.display = 'none';
+  document.getElementById('scanStatus').textContent = 'Спробуй сканування ще раз.';
+}
+
+function renderEmployees() {
+  const box = document.getElementById('employeesList');
+  if (!box) return;
+  if (employees.length === 0) {
+    box.innerHTML = '<div class="status">Працівників ще немає.</div>';
+    return;
+  }
+
+  box.innerHTML = '<table><tr><th>ПІБ</th><th>Табельний</th><th>Фото-шаблонів</th><th></th></tr>' +
+    employees.map(e => `
+      <tr>
+        <td>${escapeHtml(e.name)}</td>
+        <td>${escapeHtml(e.number || '—')}</td>
+        <td>${e.descriptors.length}</td>
+        <td><button class="red" onclick="deleteEmployee('${e.id}')">Видалити</button></td>
+      </tr>
+    `).join('') + '</table>';
+}
+
+function deleteEmployee(id) {
+  if (!confirm('Видалити працівника?')) return;
+  employees = employees.filter(e => e.id !== id);
+  saveData();
+  renderEmployees();
+}
+
+function renderJournal() {
+  const box = document.getElementById('journalTable');
+  if (!box) return;
+  if (journal.length === 0) {
+    box.innerHTML = '<div class="status">Журнал пустий.</div>';
+    return;
+  }
+
+  const rows = [...journal].reverse().map(j => `
+    <tr>
+      <td>${escapeHtml(j.name)}</td>
+      <td>${escapeHtml(j.number || '—')}</td>
+      <td><span class="pill ${j.action === 'Вийшов' ? 'out':'in'}">${j.action}</span></td>
+      <td>${escapeHtml(j.time)}</td>
+    </tr>
+  `).join('');
+
+  box.innerHTML = '<table><tr><th>Працівник</th><th>Табельний</th><th>Дія</th><th>Час</th></tr>' + rows + '</table>';
+}
+
+function exportCSV() {
+  const header = ['ПІБ','Табельний','Дія','Час'];
+  const lines = [header.join(';')];
+  journal.forEach(j => {
+    lines.push([j.name, j.number || '', j.action, j.time].map(csvCell).join(';'));
+  });
+
+  downloadText('\ufeff' + lines.join('\n'), 'journal.csv', 'text/csv;charset=utf-8');
+}
+
+function csvCell(v) {
+  return '"' + String(v).replaceAll('"','""') + '"';
+}
+
+function clearJournal() {
+  if (!confirm('Очистити журнал?')) return;
+  journal = [];
+  saveData();
+  renderJournal();
+}
+
+function saveThreshold() {
+  currentThreshold = Number(document.getElementById('threshold').value);
+  saveData();
+}
+
+function exportBackup() {
+  const data = { employees, journal, threshold: currentThreshold, exportedAt: getISO() };
+  downloadText(JSON.stringify(data, null, 2), 'face_app_backup.json', 'application/json');
+}
+
+async function importBackup(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const text = await file.text();
+  const data = JSON.parse(text);
+  employees = data.employees || [];
+  journal = data.journal || [];
+  currentThreshold = Number(data.threshold || 0.55);
+  saveData();
+  loadData();
+  renderEmployees();
+  renderJournal();
+  alert('Резервну копію імпортовано.');
+}
+
+function clearAll() {
+  if (!confirm('Очистити ВСЮ базу працівників і журнал?')) return;
+  employees = [];
+  journal = [];
+  saveData();
+  renderEmployees();
+  renderJournal();
+}
+
+function downloadText(text, filename, type) {
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, s => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;'
+  }[s]));
+}
+
+window.addEventListener('load', async () => {
+  loadData();
+  renderEmployees();
+  renderJournal();
+
+  const wait = setInterval(() => {
+    if (window.faceapi) {
+      clearInterval(wait);
+      loadModels();
+    }
+  }, 200);
+});
+</script>
+</body>
+</html>
