@@ -327,6 +327,17 @@ document.getElementById('scanPhoto').addEventListener('change', async (event) =>
       .sort((a,b) => a.distance - b.distance);
 
     const best = results[0];
+const second = results[1];
+
+if (!best || best.distance > currentThreshold) {
+  status.textContent = 'Працівника не знайдено.';
+  return;
+}
+
+// 🔥 НОВЕ: перевірка різниці між 1 і 2 місцем
+if (second && (second.distance - best.distance) < 0.05) {
+  status.textContent = 'Схожість неоднозначна. Скануй ще раз.';
+  return;
 
     if (!best || best.distance > currentThreshold + 0.02) {
       status.textContent = 'Працівника не знайдено. Спробуй ще раз при кращому освітленні. Найкраща схожість: ' + (best ? best.distance.toFixed(3) : '—');
