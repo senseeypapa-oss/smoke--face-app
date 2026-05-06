@@ -172,13 +172,14 @@
       <h2>Налаштування</h2>
       <label>Поріг схожості</label>
       <select id="threshold" onchange="saveThreshold()">
-        <option value="0.45">Суворо — 0.45</option>
-        <option value="0.50">Нормально — 0.50</option>
-        <option value="0.55" selected>М'якше — 0.55</option>
-        <option value="0.60">Дуже м'яко — 0.60</option>
+        <option value="0.50">Суворо — 0.50</option>
+        <option value="0.60">Нормально — 0.60</option>
+        <option value="0.65" selected>М'якше — 0.65</option>
+        <option value="0.70">Дуже м'яко — 0.70</option>
       </select>
       <p class="small">Чим менше число — тим суворіше розпізнавання. Якщо часто не впізнає — постав 0.60. Якщо плутає людей — постав 0.45 або 0.50.</p>
 
+      <button class="green" onclick="testPowerAutomate()">Тест відправки в Microsoft Lists</button>
       <button class="gray" onclick="exportBackup()">Експорт резервної копії JSON</button>
       <label>Імпорт резервної копії JSON</label>
       <input id="backupFile" type="file" accept="application/json" onchange="importBackup(event)" />
@@ -196,7 +197,7 @@ const MODEL_URL = 'https://raw.githubusercontent.com/justadudewhohacks/face-api.
 let employees = [];
 let journal = [];
 let pendingEmployee = null;
-let currentThreshold = 0.55;
+let currentThreshold = 0.65;
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -220,7 +221,7 @@ function saveData() {
 function loadData() {
   employees = JSON.parse(localStorage.getItem('face_employees_v1') || '[]');
   journal = JSON.parse(localStorage.getItem('face_journal_v1') || '[]');
-  currentThreshold = Number(localStorage.getItem('face_threshold_v1') || '0.55');
+  currentThreshold = Number(localStorage.getItem('face_threshold_v1') || '0.65');
   document.getElementById('threshold').value = String(currentThreshold);
 }
 
@@ -356,7 +357,7 @@ function confirmCandidate() {
 
   const action = isCurrentlyOut(pendingEmployee.id) ? 'Повернувся' : 'Вийшов';
 
-  journal.push({
+  const record = {
     id: uid(),
     employeeId: pendingEmployee.id,
     name: pendingEmployee.name,
@@ -364,20 +365,25 @@ function confirmCandidate() {
     action,
     time: nowStr(),
     iso: getISO()
-  });
+  };
 
-sendToPowerAutomate({
-  name: pendingEmployee.name,
-  number: pendingEmployee.number || '',
-  action: action,
-  datetime: new Date().toISOString(),
-  source: 'FaceIDApp'
-});
+  journal.push(record);
+
+  const paPayload = {
+    name: pendingEmployee.name,
+    number: pendingEmployee.number || '',
+    action: action,
+    datetime: new Date().toISOString(),
+    source: 'FaceIDApp'
+  };
+
+  sendToPowerAutomate(paPayload);
 
   saveData();
   document.getElementById('confirmBox').style.display = 'none';
   document.getElementById('scanStatus').textContent =
-    pendingEmployee.name + ': записано "' + action + '" о ' + nowStr();
+    pendingEmployee.name + ': записано "' + action + '" о ' + nowStr() +
+    '. Відправка в Microsoft Lists запущена.';
 
   pendingEmployee = null;
   renderJournal();
@@ -473,7 +479,7 @@ async function importBackup(event) {
   const data = JSON.parse(text);
   employees = data.employees || [];
   journal = data.journal || [];
-  currentThreshold = Number(data.threshold || 0.55);
+  currentThreshold = Number(data.threshold || 0.65);
   saveData();
   loadData();
   renderEmployees();
@@ -506,22 +512,57 @@ function escapeHtml(str) {
   }[s]));
 }
 
-async function sendToPowerAutomate(payload) {
-    const flowUrl = 'https://default0eeb54ec50a14ef38bda96b20dcc41.3c.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/733793edf7ba44449b6acce06660b081/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=9KrBHWltuhyf0_1GVY6GkoA2r7WgEpcm2gC9lF-k6Tk';
+const POWER_AUTOMATE_URL = 'https://default0eeb54ec50a14ef38bda96b20dcc41.3c.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/733793edf7ba44449b6acce06660b081/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=9KrBHWltuhyf0_1GVY6GkoA2r7WgEpcm2gC9lF-k6Tk';
 
-    try {
-        await fetch(flowUrl, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: {
-                'Content-Type': 'text/plain'
-            },
-            body: JSON.stringify(payload)
-        });
-    } catch (error) {
-        console.error('Power Automate error:', error);
+async function sendToPowerAutomate(payload) {
+  const bodyText = JSON.stringify(payload);
+
+  try {
+    if (navigator.sendBeacon) {
+      const blob = new Blob([bodyText], { type: 'text/plain;charset=UTF-8' });
+      const ok = navigator.sendBeacon(POWER_AUTOMATE_URL, blob);
+      if (ok) {
+        console.log('Power Automate: sendBeacon запущено', payload);
+        return true;
+      }
     }
+  } catch (error) {
+    console.warn('Power Automate sendBeacon error:', error);
+  }
+
+  try {
+    await fetch(POWER_AUTOMATE_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      cache: 'no-store',
+      keepalive: true,
+      headers: {
+        'Content-Type': 'text/plain;charset=UTF-8'
+      },
+      body: bodyText
+    });
+
+    console.log('Power Automate: fetch no-cors запущено', payload);
+    return true;
+  } catch (error) {
+    console.error('Power Automate fetch error:', error);
+    return false;
+  }
 }
+
+function testPowerAutomate() {
+  const payload = {
+    name: 'Тест FaceID',
+    number: '0000',
+    action: 'Тест',
+    datetime: new Date().toISOString(),
+    source: 'FaceIDApp_Test'
+  };
+
+  sendToPowerAutomate(payload);
+  alert('Тестова відправка запущена. Перевір "История запусков" у Power Automate через 10-20 секунд.');
+}
+
 window.addEventListener('load', async () => {
   loadData();
   renderEmployees();
