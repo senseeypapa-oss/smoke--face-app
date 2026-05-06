@@ -172,10 +172,10 @@
       <h2>Налаштування</h2>
       <label>Поріг схожості</label>
       <select id="threshold" onchange="saveThreshold()">
-        <option value="0.50">Суворо — 0.50</option>
-        <option value="0.60">Нормально — 0.60</option>
-        <option value="0.65" selected>М'якше — 0.65</option>
-        <option value="0.70">Дуже м'яко — 0.70</option>
+        <option value="0.45">Суворо — 0.45</option>
+        <option value="0.50">Нормально — 0.50</option>
+        <option value="0.55" selected>М'якше — 0.55</option>
+        <option value="0.60">Дуже м'яко — 0.60</option>
       </select>
       <p class="small">Чим менше число — тим суворіше розпізнавання. Якщо часто не впізнає — постав 0.60. Якщо плутає людей — постав 0.45 або 0.50.</p>
 
@@ -196,7 +196,7 @@ const MODEL_URL = 'https://raw.githubusercontent.com/justadudewhohacks/face-api.
 let employees = [];
 let journal = [];
 let pendingEmployee = null;
-let currentThreshold = 0.65;
+let currentThreshold = 0.55;
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -328,7 +328,7 @@ document.getElementById('scanPhoto').addEventListener('change', async (event) =>
 
     const best = results[0];
 
-    if (!best || best.distance > currentThreshold + 0.02) {
+    if (!best || best.distance > currentThreshold) {
       status.textContent = 'Працівника не знайдено. Спробуй ще раз при кращому освітленні. Найкраща схожість: ' + (best ? best.distance.toFixed(3) : '—');
       return;
     }
@@ -365,6 +365,14 @@ function confirmCandidate() {
     time: nowStr(),
     iso: getISO()
   });
+
+sendToPowerAutomate({
+  name: pendingEmployee.name,
+  number: pendingEmployee.number || '',
+  action: action,
+  datetime: new Date().toISOString(),
+  source: 'FaceIDApp'
+});
 
   saveData();
   document.getElementById('confirmBox').style.display = 'none';
@@ -496,6 +504,22 @@ function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, s => ({
     '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;'
   }[s]));
+}
+
+async function sendToPowerAutomate(payload) {
+    const flowUrl = 'https://default0eeb54ec50a14ef38bda96b20dcc41.3c.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/733793edf7ba44449b6acce06660b081/triggers/manual/paths/invoke?api-version=1';
+
+    try {
+        await fetch(flowUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+    } catch (error) {
+        console.error('Power Automate error:', error);
+    }
 }
 
 window.addEventListener('load', async () => {
