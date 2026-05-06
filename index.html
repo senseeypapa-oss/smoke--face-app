@@ -507,7 +507,7 @@ function escapeHtml(str) {
 }
 
 async function sendToPowerAutomate(payload) {
-    const flowUrl = 'https://default0eeb54ec50a14ef38bda96b20dcc41.3c.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/733793edf7ba44449b6acce06660b081/triggers/manual/paths/invoke?api-version=1';
+    const flowUrl = 'https://default0eeb54ec50a14ef38bda96b20dcc41.3c.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/733793edf7ba44449b6acce06660b081/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=9KrBHWltuhyf0_1GVY6GkoA2r7WgEpcm2gC9lF-k6Tk';
 
     try {
         await fetch(flowUrl, {
